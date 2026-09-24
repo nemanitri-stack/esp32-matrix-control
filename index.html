@@ -16,6 +16,8 @@
         .btn-group { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-bottom: 15px; }
         .preset-btn { background-color: #333; color: #00e5ff; border: 1px solid #00e5ff; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: bold; }
         .preset-btn:hover { background-color: #00e5ff; color: #121212; }
+        .ble-btn { background-color: #00e5ff; color: #121212; border: none; padding: 10px 20px; font-weight: bold; border-radius: 6px; cursor: pointer; margin-bottom: 15px; }
+        .ble-btn.connected { background-color: #00ff88; color: #121212; }
         .submit-btn { background-color: #00e5ff; color: #121212; border: none; padding: 12px 30px; font-size: 16px; font-weight: bold; border-radius: 25px; cursor: pointer; width: 100%; margin-top: 15px; }
         .submit-btn:hover { background-color: #00b3cc; }
         .label-text { font-size: 13px; color: #00e5ff; text-align: left; display: block; margin-top: 15px; font-weight: bold; }
@@ -26,6 +28,9 @@
     <div class="container">
         <h2>32x8 Matrix Controller</h2>
         
+        <button id="ble-connect-btn" class="ble-btn" onclick="connectBLE()">🔵 Connect ESP32 Bluetooth</button>
+        <br>
+
         <span class="label-text">1. DRAW CANVAS OR CHOOSE PRESET:</span>
         <div class="btn-group">
             <button class="preset-btn" onclick="loadPreset('arrowRight')">➡ Right Arrow</button>
@@ -47,6 +52,11 @@
         const ROWS = 8;
         const COLS = 32;
         let grid = Array(ROWS).fill().map(() => Array(COLS).fill(0));
+
+        // Web Bluetooth GATT Constants
+        const SERVICE_UUID = "4fa8691a-0351-411b-1d85-4d38d0812345";
+        const CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
+        let bleCharacteristic = null;
 
         const container = document.getElementById('matrix1');
         
@@ -71,7 +81,6 @@
             renderGrid();
         }
 
-        // Preset patterns (8x32 arrays or centered shapes)
         const PRESETS = {
             arrowRight: [
                 [0,0,0,0,0,0,0,0, 0,0,0,0,0,1,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0],
@@ -114,7 +123,7 @@
 
         renderGrid();
 
-        function encodeGrid() {
+        function getColumnBytes() {
             let colBytes = [];
             for (let c = 0; c < COLS; c++) {
                 let colByte = 0;
@@ -123,16 +132,54 @@
                 }
                 colBytes.push(colByte);
             }
-            return colBytes.join(',');
+            return colBytes;
         }
 
-        function pushData() {
-            const drawData = encodeGrid();
-            const textData = encodeURIComponent(document.getElementById('text-msg').value);
-            
-            fetch(`/updateAll?draw=${drawData}&text=${textData}`)
-                .then(r => r.text())
-                .then(t => alert(t));
+        async function connectBLE() {
+            try {
+                const device = await navigator.bluetooth.requestDevice({
+                    filters: [{ name: 'ESP32_Matrix_BLE' }],
+                    optionalServices: [SERVICE_UUID]
+                });
+
+                const server = await device.gatt.connect();
+                const service = await server.getPrimaryService(SERVICE_UUID);
+                bleCharacteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+
+                const btn = document.getElementById('ble-connect-btn');
+                btn.innerText = "🟢 ESP32 Connected!";
+                btn.classList.add('connected');
+                alert("Connected to ESP32 Matrix successfully!");
+            } catch (err) {
+                console.error("Bluetooth Connection Error:", err);
+                alert("Bluetooth Error: " + err.message);
+            }
+        }
+
+        async function pushData() {
+            if (!bleCharacteristic) {
+                alert("Please click 'Connect ESP32 Bluetooth' first!");
+                return;
+            }
+
+            try {
+                const colBytes = getColumnBytes();
+                const textMsg = document.getElementById('text-msg').value;
+
+                // Send 32 bytes of column bitmap data to ESP32
+                const bitmapBuffer = new Uint8Array(colBytes);
+                await bleCharacteristic.writeValueWithoutResponse(bitmapBuffer);
+
+                // Send text message payload prefixed with "TXT:"
+                const encoder = new TextEncoder();
+                const textBuffer = encoder.encode("TXT:" + textMsg);
+                await bleCharacteristic.writeValueWithoutResponse(textBuffer);
+
+                alert("Data sent to ESP32 Matrix!");
+            } catch (err) {
+                console.error("Transfer Error:", err);
+                alert("Failed to send data: " + err.message);
+            }
         }
     </script>
 </body>
