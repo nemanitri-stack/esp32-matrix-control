@@ -181,6 +181,22 @@
                 alert("Failed to send data: " + err.message);
             }
         }
+		async function sendTextToMatrix(text) {
+  if (!gattCharacteristic) {
+    console.error("BLE characteristic not connected");
+    return;
+  }
+
+  // MUST start with "TXT:" so ESP32 enters the text processing branch
+  const payload = "TXT:" + text;
+  
+  const encoder = new TextEncoder();
+  const data = encoder.encode(payload);
+
+  // Send over BLE
+  await gattCharacteristic.writeValue(data);
+  console.log("Sent payload:", payload);
+}
     </script>
 </body>
 </html>
