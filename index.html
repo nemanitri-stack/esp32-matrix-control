@@ -1,203 +1,153 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>32x8 Single Canvas Matrix Controller</title>
-    <style>
-        body { font-family: sans-serif; background-color: #121212; color: #e0e0e0; text-align: center; padding: 20px; }
-        .container { max-width: 850px; margin: 0 auto; background: #1e1e1e; padding: 20px; border-radius: 12px; border: 1px solid #333; }
-        h2 { color: #00e5ff; font-size: 18px; margin-bottom: 20px; }
-        .matrix-container { overflow-x: auto; padding: 5px; }
-        .matrix { display: grid; grid-template-columns: repeat(32, 18px); gap: 4px; justify-content: center; min-width: 700px; margin: 15px auto; }
-        .cell { width: 18px; height: 18px; background-color: #2a2a2a; border-radius: 50%; cursor: pointer; border: 1px solid #333; }
-        .cell.active { background-color: #ff0055; box-shadow: 0 0 8px #ff0055; }
-        .input-box { width: 95%; background: #2a2a2a; border: 1px solid #444; padding: 10px; color: #fff; border-radius: 6px; margin: 15px 0; font-size: 16px; }
-        .btn-group { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-bottom: 15px; }
-        .preset-btn { background-color: #333; color: #00e5ff; border: 1px solid #00e5ff; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: bold; }
-        .preset-btn:hover { background-color: #00e5ff; color: #121212; }
-        .ble-btn { background-color: #00e5ff; color: #121212; border: none; padding: 10px 20px; font-weight: bold; border-radius: 6px; cursor: pointer; margin-bottom: 15px; }
-        .ble-btn.connected { background-color: #00ff88; color: #121212; }
-        .submit-btn { background-color: #00e5ff; color: #121212; border: none; padding: 12px 30px; font-size: 16px; font-weight: bold; border-radius: 25px; cursor: pointer; width: 100%; margin-top: 15px; }
-        .submit-btn:hover { background-color: #00b3cc; }
-        .label-text { font-size: 13px; color: #00e5ff; text-align: left; display: block; margin-top: 15px; font-weight: bold; }
-        hr { border: 0; height: 1px; background: #333; margin: 20px 0; }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ESP32 LED Matrix Control</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 600px;
+      margin: 30px auto;
+      padding: 20px;
+      background-color: #121212;
+      color: #ffffff;
+      border-radius: 10px;
+    }
+    h2 {
+      text-align: center;
+      color: #00e676;
+    }
+    .status {
+      text-align: center;
+      padding: 10px;
+      margin-bottom: 20px;
+      border-radius: 5px;
+      background-color: #333;
+      font-weight: bold;
+    }
+    .status.connected {
+      background-color: #1b5e20;
+      color: #a5d6a7;
+    }
+    button {
+      background-color: #00e676;
+      color: #000;
+      border: none;
+      padding: 12px 20px;
+      font-size: 16px;
+      font-weight: bold;
+      border-radius: 5px;
+      cursor: pointer;
+      width: 100%;
+      margin-bottom: 15px;
+    }
+    button:hover {
+      background-color: #00c853;
+    }
+    input[type="text"] {
+      width: calc(100% - 22px);
+      padding: 10px;
+      font-size: 16px;
+      border-radius: 5px;
+      border: 1px solid #444;
+      background-color: #222;
+      color: #fff;
+      margin-bottom: 15px;
+    }
+    .card {
+      background-color: #1e1e1e;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <h2>32x8 Matrix Controller</h2>
-        
-        <button id="ble-connect-btn" class="ble-btn" onclick="connectBLE()">🔵 Connect ESP32 Bluetooth</button>
-        <br>
 
-        <span class="label-text">1. DRAW CANVAS OR CHOOSE PRESET:</span>
-        <div class="btn-group">
-            <button class="preset-btn" onclick="loadPreset('arrowRight')">➡ Right Arrow</button>
-            <button class="preset-btn" onclick="loadPreset('arrowLeft')">⬅ Left Arrow</button>
-            <button class="preset-btn" onclick="loadPreset('heart')">♥ Heart</button>
-            <button class="preset-btn" onclick="clearGrid()" style="color:#ff5555; border-color:#ff5555;">✖ Clear</button>
-        </div>
-
-        <div class="matrix-container"><div class="matrix" id="matrix1"></div></div>
-        
-        <hr>
-
-        <span class="label-text">2. ENTER SCROLLING MESSAGE:</span>
-        <input type="text" id="text-msg" class="input-box" value="HELLO WORLD" placeholder="Type text here...">
-
-        <button class="submit-btn" onclick="pushData()">Update Display</button>
-    </div>
-    <script>
-        const ROWS = 8;
-        const COLS = 32;
-        let grid = Array(ROWS).fill().map(() => Array(COLS).fill(0));
-
-        // Web Bluetooth GATT Constants
-        const SERVICE_UUID = "4fa8691a-0351-411b-1d85-4d38d0812345";
-        const CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
-        let bleCharacteristic = null;
-
-        const container = document.getElementById('matrix1');
-        
-        function renderGrid() {
-            container.innerHTML = '';
-            for (let r = 0; r < ROWS; r++) {
-                for (let c = 0; c < COLS; c++) {
-                    const cell = document.createElement('div');
-                    cell.classList.add('cell');
-                    if (grid[r][c] === 1) cell.classList.add('active');
-                    cell.addEventListener('click', () => {
-                        grid[r][c] = grid[r][c] === 1 ? 0 : 1;
-                        cell.classList.toggle('active');
-                    });
-                    container.appendChild(cell);
-                }
-            }
-        }
-
-        function clearGrid() {
-            grid = Array(ROWS).fill().map(() => Array(COLS).fill(0));
-            renderGrid();
-        }
-
-        const PRESETS = {
-            arrowRight: [
-                [0,0,0,0,0,0,0,0, 0,0,0,0,0,1,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0],
-                [0,0,0,0,0,0,0,0, 0,0,0,0,0,0,1,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0],
-                [0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,1, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0],
-                [0,0,0,0,1,1,1,1, 1,1,1,1,1,1,1,1, 1,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0],
-                [0,0,0,0,1,1,1,1, 1,1,1,1,1,1,1,1, 1,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0],
-                [0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,1, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0],
-                [0,0,0,0,0,0,0,0, 0,0,0,0,0,0,1,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0],
-                [0,0,0,0,0,0,0,0, 0,0,0,0,0,1,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0]
-            ],
-            arrowLeft: [
-                [0,0,0,0,0,0,0,0, 0,0,0,0,0,1,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0],
-                [0,0,0,0,0,0,0,0, 0,0,0,0,1,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0],
-                [0,0,0,0,0,0,0,0, 0,0,0,1,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0],
-                [0,0,0,0,0,0,0,0, 1,1,1,1,1,1,1,1, 1,1,1,1,1,1,0,0, 0,0,0,0,0,0,0,0],
-                [0,0,0,0,0,0,0,0, 1,1,1,1,1,1,1,1, 1,1,1,1,1,1,0,0, 0,0,0,0,0,0,0,0],
-                [0,0,0,0,0,0,0,0, 0,0,0,1,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0],
-                [0,0,0,0,0,0,0,0, 0,0,0,0,1,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0],
-                [0,0,0,0,0,0,0,0, 0,0,0,0,0,1,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0]
-            ],
-            heart: [
-                [0,0,0,0,0,0,0,0, 0,0,0,1,1,0,0,0, 0,1,1,0,0,0,0,0, 0,0,0,0,0,0,0,0],
-                [0,0,0,0,0,0,0,0, 0,0,1,1,1,1,0,0, 1,1,1,1,0,0,0,0, 0,0,0,0,0,0,0,0],
-                [0,0,0,0,0,0,0,0, 0,1,1,1,1,1,1,1, 1,1,1,1,1,0,0,0, 0,0,0,0,0,0,0,0],
-                [0,0,0,0,0,0,0,0, 0,1,1,1,1,1,1,1, 1,1,1,1,1,0,0,0, 0,0,0,0,0,0,0,0],
-                [0,0,0,0,0,0,0,0, 0,0,1,1,1,1,1,1, 1,1,1,1,0,0,0,0, 0,0,0,0,0,0,0,0],
-                [0,0,0,0,0,0,0,0, 0,0,0,1,1,1,1,1, 1,1,1,0,0,0,0,0, 0,0,0,0,0,0,0,0],
-                [0,0,0,0,0,0,0,0, 0,0,0,0,1,1,1,1, 1,1,0,0,0,0,0,0, 0,0,0,0,0,0,0,0],
-                [0,0,0,0,0,0,0,0, 0,0,0,0,0,0,1,1, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0]
-            ]
-        };
-
-        function loadPreset(name) {
-            if (PRESETS[name]) {
-                grid = PRESETS[name].map(row => [...row]);
-                renderGrid();
-            }
-        }
-
-        renderGrid();
-
-        function getColumnBytes() {
-            let colBytes = [];
-            for (let c = 0; c < COLS; c++) {
-                let colByte = 0;
-                for (let r = 0; r < ROWS; r++) {
-                    if (grid[r][c] === 1) colByte |= (1 << r);
-                }
-                colBytes.push(colByte);
-            }
-            return colBytes;
-        }
-
-        async function connectBLE() {
-            try {
-                const device = await navigator.bluetooth.requestDevice({
-                    filters: [{ name: 'ESP32_Matrix_BLE' }],
-                    optionalServices: [SERVICE_UUID]
-                });
-                console.log("Device selected:", device.name);
-                const server = await device.gatt.connect();
-                const service = await server.getPrimaryService(SERVICE_UUID);
-                const Characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
-                console.log("Connected successfully!");
-                const btn = document.getElementById('ble-connect-btn');
-                btn.innerText = "🟢 ESP32 Connected!";
-                btn.classList.add('connected');
-                alert("Connected to ESP32 Matrix successfully!");
-            } catch (err) {
-			    console.error("Connection failed:", error);
-                console.error("Bluetooth Connection Error:", err);
-                alert("Bluetooth Error: " + err.message);
-            }
-        }
-
-        async function pushData() {
-            if (!bleCharacteristic) {
-                alert("Please click 'Connect ESP32 Bluetooth' first!");
-                return;
-            }
-
-            try {
-                const colBytes = getColumnBytes();
-                const textMsg = document.getElementById('text-msg').value;
-
-                // Send 32 bytes of column bitmap data to ESP32
-                const bitmapBuffer = new Uint8Array(colBytes);
-                await bleCharacteristic.writeValueWithoutResponse(bitmapBuffer);
-
-                // Send text message payload prefixed with "TXT:"
-                const encoder = new TextEncoder();
-                const textBuffer = encoder.encode("TXT:" + textMsg);
-                await bleCharacteristic.writeValueWithoutResponse(textBuffer);
-
-                alert("Data sent to ESP32 Matrix!");
-            } catch (err) {
-                console.error("Transfer Error:", err);
-                alert("Failed to send data: " + err.message);
-            }
-        }
-		async function sendTextToMatrix(text) {
-  if (!gattCharacteristic) {
-    console.error("BLE characteristic not connected");
-    return;
-  }
-
-  // MUST start with "TXT:" so ESP32 enters the text processing branch
-  const payload = "TXT:" + text;
+  <h2>ESP32 LED Matrix Controller</h2>
   
-  const encoder = new TextEncoder();
-  const data = encoder.encode(payload);
+  <div id="status" class="status">Status: Disconnected</div>
+  
+  <button id="connectBtn" onclick="connectBLE()">Connect to ESP32 Matrix</button>
 
-  // Send over BLE
-  await gattCharacteristic.writeValue(data);
-  console.log("Sent payload:", payload);
-}
-    </script>
+  <div class="card">
+    <h3>Send Text Message</h3>
+    <input type="text" id="textInput" placeholder="Enter text (max 5 chars fit)..." maxlength="10">
+    <button onclick="sendText()">Send Text to Matrix</button>
+  </div>
+
+  <script>
+    const SERVICE_UUID = "4fa8691a-0351-411b-1d85-4d38d0812345";
+    const CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
+
+    let bleCharacteristic = null;
+
+    async function connectBLE() {
+      const statusDiv = document.getElementById("status");
+      try {
+        statusDiv.innerText = "Status: Searching for ESP32...";
+        
+        // Connect via Service UUID with optionalServices fallback
+        const device = await navigator.bluetooth.requestDevice({
+          filters: [{ services: [SERVICE_UUID] }],
+          optionalServices: [SERVICE_UUID]
+        });
+
+        statusDiv.innerText = "Status: Connecting to GATT Server...";
+        const server = await device.gatt.connect();
+
+        statusDiv.innerText = "Status: Locating Matrix Service...";
+        const service = await server.getPrimaryService(SERVICE_UUID);
+
+        statusDiv.innerText = "Status: Acquiring Characteristic...";
+        bleCharacteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+
+        statusDiv.innerText = "Status: Connected to ESP32 Matrix!";
+        statusDiv.classList.add("connected");
+        
+        // Monitor unexpected disconnects
+        device.addEventListener('gattserverdisconnected', onDisconnected);
+
+      } catch (error) {
+        console.error("Web Bluetooth Error:", error);
+        statusDiv.innerText = "Connection Failed: " + error.message;
+        statusDiv.classList.remove("connected");
+      }
+    }
+
+    function onDisconnected() {
+      const statusDiv = document.getElementById("status");
+      statusDiv.innerText = "Status: Disconnected. Please Reconnect.";
+      statusDiv.classList.remove("connected");
+      bleCharacteristic = null;
+    }
+
+    async function sendText() {
+      if (!bleCharacteristic) {
+        alert("Please connect to the ESP32 first!");
+        return;
+      }
+
+      const textVal = document.getElementById("textInput").value;
+      if (!textVal) {
+        alert("Please enter a text message!");
+        return;
+      }
+
+      // Format payload with TXT: prefix for the ESP32 parser
+      const payload = "TXT:" + textVal;
+      const encoder = new TextEncoder();
+      const data = encoder.encode(payload);
+
+      try {
+        await bleCharacteristic.writeValue(data);
+        console.log("Sent payload:", payload);
+      } catch (error) {
+        console.error("Failed to send text:", error);
+        alert("Failed to send text to ESP32.");
+      }
+    }
+  </script>
 </body>
 </html>
